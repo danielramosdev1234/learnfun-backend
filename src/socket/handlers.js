@@ -399,7 +399,7 @@ const webrtcService = new WebRTCService(io);
           } else {
             console.log('🔄 User reconnected, keeping session:', socket.userId);
           }
-        }, 5000); // ✅ Esperar 5 segundos antes de processar desconexão
+        }, 500); // ✅ Esperar 5 segundos antes de processar desconexão
       }
     });
   });
