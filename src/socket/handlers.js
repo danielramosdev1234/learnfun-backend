@@ -139,20 +139,35 @@ const webrtcService = new WebRTCService(io);
 
       webrtcService.removePeer(roomId, socket.userId);
 
-      // Verificar se é o criador da sala
-      const room = await getRoomDetails(roomId);
-      const isCreator = room?.creator_id === socket.userId;
+      // ✅ Remover usuário da sala no banco de dados
+      await leaveRoom(roomId, socket.userId);
+      const profile = await getUserProfile(socket.userId);
 
-      if (isCreator) {
-        console.log('👑 Creator leaving room, closing room:', roomId);
+      // ✅ Notificar outros usuários sobre a saída
+      socket.to(`room:${roomId}`).emit('user-left', {
+        userId: socket.userId,
+        username: profile.username
+      });
 
-        // Notificar todos os participantes que a sala está fechando
+      console.log(`👋 User ${socket.userId} left room ${roomId}`);
+
+      // ✅ Remover socket da sala do Socket.IO
+      socket.leave(`room:${roomId}`);
+      socket.currentRoomId = null;
+
+      // ✅ Verificar quantos usuários ainda estão na sala
+      const socketsInRoom = await io.in(`room:${roomId}`).fetchSockets();
+      const usersInRoom = socketsInRoom.filter(s => s.userId).length;
+
+      // ✅ Se não há mais ninguém na sala, fechar
+      if (usersInRoom === 0) {
+        console.log('🚪 Last user left, closing room:', roomId);
+
         io.to(`room:${roomId}`).emit('room-closed', {
           roomId: roomId,
-          message: 'Room closed by creator'
+          message: 'Room closed - no users remaining'
         });
 
-        // Fechar a sala
         await closeRoom(roomId);
 
         // Broadcast atualização da lista de salas
@@ -161,20 +176,8 @@ const webrtcService = new WebRTCService(io);
 
         console.log('🔒 Room closed:', roomId);
       } else {
-        // Participante normal saindo
-        await leaveRoom(roomId, socket.userId);
-        const profile = await getUserProfile(socket.userId);
-
-        socket.to(`room:${roomId}`).emit('user-left', {
-          userId: socket.userId,
-          username: profile.username
-        });
-
-        console.log(`👋 User ${socket.userId} left room ${roomId}`);
+        console.log(`👥 ${usersInRoom} user(s) still in room:`, roomId);
       }
-
-      socket.leave(`room:${roomId}`);
-      socket.currentRoomId = null;
     });
 
     socket.on('promote-to-speaker', async ({ roomId, userId }) => {
@@ -358,7 +361,7 @@ const webrtcService = new WebRTCService(io);
           webrtcService.removePeer(socket.currentRoomId, socket.userId);
         }
 
-        // ✅ ADICIONAR: Timeout antes de marcar offline
+        // ✅ Timeout antes de marcar offline
         setTimeout(async () => {
           // Verificar se reconectou nesse tempo
           const stillDisconnected = !Array.from(io.sockets.sockets.values())
@@ -370,14 +373,28 @@ const webrtcService = new WebRTCService(io);
             // Se estava em uma sala E continua desconectado, processa saída
             if (socket.currentRoomId) {
               const room = await getRoomDetails(socket.currentRoomId);
-              const isCreator = room?.creator_id === socket.userId;
 
-              if (isCreator) {
-                console.log('👑 Creator disconnected (timeout), closing room:', socket.currentRoomId);
+              // ✅ NOVA LÓGICA: Remover usuário da sala
+              await leaveRoom(socket.currentRoomId, socket.userId);
+              const profile = await getUserProfile(socket.userId);
+
+              // Notificar outros usuários que esse saiu
+              socket.to(`room:${socket.currentRoomId}`).emit('user-left', {
+                userId: socket.userId,
+                username: profile.username
+              });
+
+              // ✅ Verificar quantos usuários ainda estão na sala
+              const socketsInRoom = await io.in(`room:${socket.currentRoomId}`).fetchSockets();
+              const usersInRoom = socketsInRoom.filter(s => s.userId).length;
+
+              // ✅ Se não há mais ninguém na sala, fechar
+              if (usersInRoom === 0) {
+                console.log('🚪 Last user left, closing room:', socket.currentRoomId);
 
                 io.to(`room:${socket.currentRoomId}`).emit('room-closed', {
                   roomId: socket.currentRoomId,
-                  message: 'Room closed - creator disconnected'
+                  message: 'Room closed - no users remaining'
                 });
 
                 await closeRoom(socket.currentRoomId);
@@ -385,13 +402,7 @@ const webrtcService = new WebRTCService(io);
                 const rooms = await getActiveRooms();
                 io.emit('rooms-list', rooms);
               } else {
-                await leaveRoom(socket.currentRoomId, socket.userId);
-                const profile = await getUserProfile(socket.userId);
-
-                socket.to(`room:${socket.currentRoomId}`).emit('user-left', {
-                  userId: socket.userId,
-                  username: profile.username
-                });
+                console.log(`👥 ${usersInRoom} user(s) still in room:`, socket.currentRoomId);
               }
             }
 
@@ -399,7 +410,7 @@ const webrtcService = new WebRTCService(io);
           } else {
             console.log('🔄 User reconnected, keeping session:', socket.userId);
           }
-        }, 500); // ✅ Esperar 5 segundos antes de processar desconexão
+        }, 500); // Esperar 500ms antes de processar desconexão
       }
     });
   });
