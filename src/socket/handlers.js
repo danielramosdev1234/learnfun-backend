@@ -180,6 +180,33 @@ const webrtcService = new WebRTCService(io);
       }
     });
 
+    socket.on('send-emotion', async (data) => {
+      try {
+        // ✅ Buscar perfil do usuário para pegar o username
+        const profile = await getUserProfile(data.userId);
+
+        if (!profile) {
+          console.error('❌ Profile not found for user:', data.userId);
+          return;
+        }
+
+        const emotionData = {
+          userId: data.userId,
+          identity: profile.username, // ✅ ADICIONAR IDENTITY
+          emotion: data.emotion,
+          roomId: data.roomId
+        };
+
+        console.log('😊 Broadcasting emotion:', emotionData);
+
+        // ✅ Emitir para TODA a sala (incluindo o remetente)
+        io.to(`room:${data.roomId}`).emit('emotion', emotionData);
+
+      } catch (error) {
+        console.error('❌ Error sending emotion:', error);
+      }
+    });
+
     socket.on('promote-to-speaker', async ({ roomId, userId }) => {
       if (!socket.userId) return;
 
