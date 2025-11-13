@@ -9,6 +9,20 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import { setupSocketHandlers } from './socket/handlers.js';
 import { AccessToken, RoomServiceClient, TrackSource } from 'livekit-server-sdk';
+import {
+  sendNotification,
+  sendMulticastNotification,
+  sendDailyReminder,
+  sendInactivityReminder,
+  sendStreakReminder,
+  sendAchievementNotification,
+  sendWeeklyChallengeNotification,
+  sendFriendActivityNotification,
+  sendReviewReminder
+} from './services/fcmService.js';
+import { authenticate, authorizeUser, requireAdmin } from './middleware/auth.js';
+import { rateLimit, notificationRateLimit } from './middleware/rateLimit.js';
+import { auditLogger } from './middleware/logger.js';
 
 const app = express();
 const server = createServer(app);
@@ -43,6 +57,9 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// Configura trust proxy para obter IP real em produção
+app.set('trust proxy', true);
 
 // Socket.io com CORS
 const io = new Server(server, {
@@ -257,6 +274,225 @@ app.post('/api/livekit/participant/mute', async (req, res) => {
   }
 });
 
+// ============================================
+// 🔔 ROTAS DE NOTIFICAÇÕES PUSH (FCM)
+// ============================================
+
+/**
+ * POST /api/notifications/send
+ * Envia notificação push para um usuário
+ * Requer autenticação
+ */
+app.post('/api/notifications/send', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, notification } = req.body;
+
+    if (!userId || !notification) {
+      return res.status(400).json({
+        error: 'userId e notification são obrigatórios'
+      });
+    }
+
+    const result = await sendNotification(userId, notification);
+
+    if (result.success) {
+      res.json({ success: true, messageId: result.messageId });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação:', error);
+    res.status(500).json({ error: 'Failed to send notification' });
+  }
+});
+
+/**
+ * POST /api/notifications/send-multiple
+ * Envia notificação push para múltiplos usuários
+ * Requer autenticação e permissão de admin
+ */
+app.post('/api/notifications/send-multiple', authenticate, requireAdmin, rateLimit(5, 60 * 1000), auditLogger, async (req, res) => {
+  try {
+    const { userIds, notification } = req.body;
+
+    if (!userIds || !Array.isArray(userIds) || !notification) {
+      return res.status(400).json({
+        error: 'userIds (array) e notification são obrigatórios'
+      });
+    }
+
+    const result = await sendMulticastNotification(userIds, notification);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificações múltiplas:', error);
+    res.status(500).json({ error: 'Failed to send notifications' });
+  }
+});
+
+/**
+ * POST /api/notifications/daily-reminder
+ * Envia lembrete diário
+ * Requer autenticação
+ */
+app.post('/api/notifications/daily-reminder', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, settings } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId é obrigatório' });
+    }
+
+    const result = await sendDailyReminder(userId, settings);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar lembrete diário:', error);
+    res.status(500).json({ error: 'Failed to send daily reminder' });
+  }
+});
+
+/**
+ * POST /api/notifications/inactivity
+ * Envia notificação de inatividade
+ * Requer autenticação
+ */
+app.post('/api/notifications/inactivity', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, daysWithoutActivity } = req.body;
+
+    if (!userId || daysWithoutActivity === undefined) {
+      return res.status(400).json({
+        error: 'userId e daysWithoutActivity são obrigatórios'
+      });
+    }
+
+    const result = await sendInactivityReminder(userId, daysWithoutActivity);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação de inatividade:', error);
+    res.status(500).json({ error: 'Failed to send inactivity notification' });
+  }
+});
+
+/**
+ * POST /api/notifications/streak
+ * Envia notificação de streak
+ * Requer autenticação
+ */
+app.post('/api/notifications/streak', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, streak } = req.body;
+
+    if (!userId || streak === undefined) {
+      return res.status(400).json({
+        error: 'userId e streak são obrigatórios'
+      });
+    }
+
+    const result = await sendStreakReminder(userId, streak);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação de streak:', error);
+    res.status(500).json({ error: 'Failed to send streak notification' });
+  }
+});
+
+/**
+ * POST /api/notifications/achievement
+ * Envia notificação de conquista
+ * Requer autenticação
+ */
+app.post('/api/notifications/achievement', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, achievementType, details } = req.body;
+
+    if (!userId || !achievementType) {
+      return res.status(400).json({
+        error: 'userId e achievementType são obrigatórios'
+      });
+    }
+
+    const result = await sendAchievementNotification(userId, achievementType, details);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação de conquista:', error);
+    res.status(500).json({ error: 'Failed to send achievement notification' });
+  }
+});
+
+/**
+ * POST /api/notifications/weekly-challenge
+ * Envia notificação de desafio semanal
+ * Requer autenticação
+ */
+app.post('/api/notifications/weekly-challenge', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId é obrigatório' });
+    }
+
+    const result = await sendWeeklyChallengeNotification(userId);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação de desafio semanal:', error);
+    res.status(500).json({ error: 'Failed to send weekly challenge notification' });
+  }
+});
+
+/**
+ * POST /api/notifications/friend-activity
+ * Envia notificação de atividade de amigo
+ * Requer autenticação
+ */
+app.post('/api/notifications/friend-activity', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, friendName, action } = req.body;
+
+    if (!userId || !friendName || !action) {
+      return res.status(400).json({
+        error: 'userId, friendName e action são obrigatórios'
+      });
+    }
+
+    const result = await sendFriendActivityNotification(userId, friendName, action);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação de atividade de amigo:', error);
+    res.status(500).json({ error: 'Failed to send friend activity notification' });
+  }
+});
+
+/**
+ * POST /api/notifications/review
+ * Envia notificação de revisão
+ * Requer autenticação
+ */
+app.post('/api/notifications/review', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
+  try {
+    const { userId, difficultPhrasesCount } = req.body;
+
+    if (!userId || difficultPhrasesCount === undefined) {
+      return res.status(400).json({
+        error: 'userId e difficultPhrasesCount são obrigatórios'
+      });
+    }
+
+    const result = await sendReviewReminder(userId, difficultPhrasesCount);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação de revisão:', error);
+    res.status(500).json({ error: 'Failed to send review notification' });
+  }
+});
 
 // Start server
 const PORT = process.env.PORT || 3001;
