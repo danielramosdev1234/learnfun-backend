@@ -23,6 +23,7 @@ import {
 import { authenticate, authorizeUser, requireAdmin } from './middleware/auth.js';
 import { rateLimit, notificationRateLimit } from './middleware/rateLimit.js';
 import { auditLogger } from './middleware/logger.js';
+import { runScheduledGlobalNotifications } from './services/globalNotifications.js';
 
 const app = express();
 const server = createServer(app);
@@ -518,6 +519,67 @@ app.post('/api/notifications/review', authenticate, authorizeUser, notificationR
   }
 });
 
+// ============================================
+// ⏰ ROTA: POST /api/notifications/schedule-global
+// Executa notificações globais agendadas (cron job)
+// Horários fixos: 9:30, 12:00, 20:00
+// ============================================
+
+/**
+ * POST /api/notifications/schedule-global
+ * Executa notificações globais agendadas em horários fixos
+ * Protegido por token secreto (para uso com cron jobs externos)
+ * 
+ * Horários:
+ * - 9:30: Lembrete para treinar
+ * - 12:00: Lembrete de streak
+ * - 20:00: Mensagem motivadora
+ */
+app.post('/api/notifications/schedule-global', async (req, res) => {
+  try {
+    // Verifica token secreto para proteger o endpoint
+    const scheduleToken = process.env.SCHEDULE_TOKEN || 'change-me-in-production';
+    const providedToken = req.headers['x-schedule-token'] || req.body.token;
+    
+    if (!providedToken || providedToken !== scheduleToken) {
+      console.warn('❌ [SCHEDULE-GLOBAL] Tentativa de acesso sem token válido');
+      return res.status(401).json({
+        error: 'Token inválido',
+        message: 'Forneça um token válido no header x-schedule-token'
+      });
+    }
+
+    console.log('⏰ [SCHEDULE-GLOBAL] Executando notificações globais agendadas...');
+    console.log('📅 [SCHEDULE-GLOBAL] Data/Hora:', new Date().toISOString());
+    
+    const results = await runScheduledGlobalNotifications();
+    
+    if (results.executed) {
+      console.log('✅ [SCHEDULE-GLOBAL] Execução concluída:', {
+        type: results.type,
+        sent: results.result?.sent || 0,
+        total: results.result?.total || 0
+      });
+    } else {
+      console.log('⏭️ [SCHEDULE-GLOBAL] Nenhuma notificação agendada para este horário');
+    }
+    
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      executed: results.executed,
+      type: results.type,
+      result: results.result
+    });
+  } catch (error) {
+    console.error('❌ [SCHEDULE-GLOBAL] Erro ao executar notificações globais:', error);
+    res.status(500).json({
+      error: 'Failed to run scheduled global notifications',
+      details: error.message
+    });
+  }
+});
+
 // Start server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
@@ -533,6 +595,8 @@ server.listen(PORT, () => {
   console.log(`   - POST /api/notifications/weekly-challenge`);
   console.log(`   - POST /api/notifications/friend-activity`);
   console.log(`   - POST /api/notifications/review`);
+  console.log(`⏰ Global scheduled notifications endpoint:`);
+  console.log(`   - POST /api/notifications/schedule-global (9:30, 12:00, 20:00)`);
   console.log(`📋 Environment variables:`);
   console.log(`   - PORT: ${PORT}`);
   console.log(`   - ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'default'}`);
