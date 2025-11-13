@@ -167,11 +167,12 @@ export const sendMotivationalMessage = async () => {
 /**
  * Executa notificações agendadas baseado no horário atual
  */
-export const runScheduledGlobalNotifications = async () => {
+export const runScheduledGlobalNotifications = async (hourParam, minuteParam) => {
   try {
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
+    // Usa os parâmetros se fornecidos, senão usa a hora atual
+    const currentHour = hourParam !== undefined ? hourParam : now.getHours();
+    const currentMinute = minuteParam !== undefined ? minuteParam : now.getMinutes();
     const timeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
     
     console.log(`⏰ Verificando notificações agendadas para ${timeString}...`);
