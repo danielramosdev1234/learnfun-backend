@@ -42,12 +42,20 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
 app.use(cors({
   origin: (origin, callback) => {
     // Permite requisições sem origin (mobile apps, Postman, etc)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('🌐 [CORS] Requisição sem origin (permitida)');
+      return callback(null, true);
+    }
+
+    console.log('🌐 [CORS] Verificando origin:', origin);
+    console.log('🌐 [CORS] Origens permitidas:', allowedOrigins);
 
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ [CORS] Origin permitida:', origin);
       callback(null, true);
     } else {
-      console.warn('❌ Blocked by CORS:', origin);
+      console.warn('❌ [CORS] Origin bloqueada:', origin);
+      console.warn('❌ [CORS] Origens permitidas:', allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -285,24 +293,33 @@ app.post('/api/livekit/participant/mute', async (req, res) => {
  */
 app.post('/api/notifications/send', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
   try {
+    console.log('📨 [NOTIFICATION] Recebida requisição para enviar notificação');
+    console.log('📋 [NOTIFICATION] Body:', JSON.stringify(req.body, null, 2));
+    console.log('👤 [NOTIFICATION] User:', req.user);
+    
     const { userId, notification } = req.body;
 
     if (!userId || !notification) {
+      console.error('❌ [NOTIFICATION] Dados faltando:', { userId: !!userId, notification: !!notification });
       return res.status(400).json({
         error: 'userId e notification são obrigatórios'
       });
     }
 
+    console.log('🚀 [NOTIFICATION] Enviando notificação para userId:', userId);
     const result = await sendNotification(userId, notification);
+    console.log('📊 [NOTIFICATION] Resultado:', result);
 
     if (result.success) {
       res.json({ success: true, messageId: result.messageId });
     } else {
+      console.error('❌ [NOTIFICATION] Falha ao enviar:', result.error);
       res.status(400).json({ success: false, error: result.error });
     }
   } catch (error) {
-    console.error('❌ Erro ao enviar notificação:', error);
-    res.status(500).json({ error: 'Failed to send notification' });
+    console.error('❌ [NOTIFICATION] Erro ao enviar notificação:', error);
+    console.error('❌ [NOTIFICATION] Stack:', error.stack);
+    res.status(500).json({ error: 'Failed to send notification', details: error.message });
   }
 });
 
@@ -337,18 +354,25 @@ app.post('/api/notifications/send-multiple', authenticate, requireAdmin, rateLim
  */
 app.post('/api/notifications/daily-reminder', authenticate, authorizeUser, notificationRateLimit, auditLogger, async (req, res) => {
   try {
+    console.log('📅 [DAILY-REMINDER] Recebida requisição');
+    console.log('📋 [DAILY-REMINDER] Body:', JSON.stringify(req.body, null, 2));
+    
     const { userId, settings } = req.body;
 
     if (!userId) {
+      console.error('❌ [DAILY-REMINDER] userId não fornecido');
       return res.status(400).json({ error: 'userId é obrigatório' });
     }
 
+    console.log('🚀 [DAILY-REMINDER] Enviando para userId:', userId);
     const result = await sendDailyReminder(userId, settings);
+    console.log('📊 [DAILY-REMINDER] Resultado:', result);
 
     res.json(result);
   } catch (error) {
-    console.error('❌ Erro ao enviar lembrete diário:', error);
-    res.status(500).json({ error: 'Failed to send daily reminder' });
+    console.error('❌ [DAILY-REMINDER] Erro:', error);
+    console.error('❌ [DAILY-REMINDER] Stack:', error.stack);
+    res.status(500).json({ error: 'Failed to send daily reminder', details: error.message });
   }
 });
 
@@ -500,4 +524,17 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.io ready`);
   console.log(`🌐 CORS allowed origins:`, allowedOrigins);
+  console.log(`🔔 Notification endpoints ready:`);
+  console.log(`   - POST /api/notifications/send`);
+  console.log(`   - POST /api/notifications/daily-reminder`);
+  console.log(`   - POST /api/notifications/inactivity`);
+  console.log(`   - POST /api/notifications/streak`);
+  console.log(`   - POST /api/notifications/achievement`);
+  console.log(`   - POST /api/notifications/weekly-challenge`);
+  console.log(`   - POST /api/notifications/friend-activity`);
+  console.log(`   - POST /api/notifications/review`);
+  console.log(`📋 Environment variables:`);
+  console.log(`   - PORT: ${PORT}`);
+  console.log(`   - ALLOWED_ORIGINS: ${process.env.ALLOWED_ORIGINS || 'default'}`);
+  console.log(`   - FIREBASE_PROJECT_ID: ${process.env.FIREBASE_PROJECT_ID ? '✅ configurado' : '❌ não configurado'}`);
 });

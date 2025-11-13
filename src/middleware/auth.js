@@ -6,10 +6,18 @@ import { verifyFirebaseToken } from '../config/firebase.js';
  */
 export const authenticate = async (req, res, next) => {
   try {
+    console.log('🔐 [AUTH] Verificando autenticação para:', req.method, req.path);
+    console.log('🔐 [AUTH] Headers:', {
+      authorization: req.headers.authorization ? 'Bearer ***' : 'não fornecido',
+      origin: req.headers.origin,
+      'user-agent': req.headers['user-agent']?.substring(0, 50)
+    });
+    
     // Extrai o token do header Authorization
     const authHeader = req.headers.authorization;
     
     if (!authHeader) {
+      console.error('❌ [AUTH] Token não fornecido');
       return res.status(401).json({
         error: 'Token não fornecido',
         message: 'Adicione o header Authorization: Bearer <token>'
@@ -19,6 +27,7 @@ export const authenticate = async (req, res, next) => {
     // Verifica formato Bearer token
     const parts = authHeader.split(' ');
     if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      console.error('❌ [AUTH] Formato de token inválido');
       return res.status(401).json({
         error: 'Formato de token inválido',
         message: 'Use o formato: Bearer <token>'
@@ -26,16 +35,20 @@ export const authenticate = async (req, res, next) => {
     }
 
     const token = parts[1];
+    console.log('🔐 [AUTH] Token recebido (primeiros 20 chars):', token.substring(0, 20) + '...');
 
     // Verifica o token com Firebase Admin
     const result = await verifyFirebaseToken(token);
 
     if (!result.success) {
+      console.error('❌ [AUTH] Token inválido:', result.error);
       return res.status(401).json({
         error: 'Token inválido',
         message: result.error || 'Token expirado ou inválido'
       });
     }
+
+    console.log('✅ [AUTH] Token válido para usuário:', result.uid);
 
     // Adiciona informações do usuário ao request
     req.user = {
@@ -46,7 +59,8 @@ export const authenticate = async (req, res, next) => {
     // Continua para o próximo middleware/route handler
     next();
   } catch (error) {
-    console.error('❌ Erro no middleware de autenticação:', error);
+    console.error('❌ [AUTH] Erro no middleware de autenticação:', error);
+    console.error('❌ [AUTH] Stack:', error.stack);
     return res.status(500).json({
       error: 'Erro ao processar autenticação',
       message: error.message
