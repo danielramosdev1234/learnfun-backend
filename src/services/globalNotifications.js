@@ -79,18 +79,23 @@ export const sendGlobalNotification = async (title, body, options = {}) => {
       const batch = userIds.slice(i, i + batchSize);
       
       try {
+        console.log(`📦 Enviando lote ${Math.floor(i / batchSize) + 1} com ${batch.length} usuários...`);
         const result = await sendMulticastNotification(batch, notification);
         
         if (result.success) {
-          totalSent += result.successCount || batch.length;
+          totalSent += result.successCount || 0;
           totalFailed += result.failureCount || 0;
-          console.log(`✅ Lote ${Math.floor(i / batchSize) + 1}: ${result.successCount || batch.length} enviadas`);
+          console.log(`✅ Lote ${Math.floor(i / batchSize) + 1}: ${result.successCount || 0} sucesso, ${result.failureCount || 0} falhas`);
         } else {
           totalFailed += batch.length;
-          console.error(`❌ Lote ${Math.floor(i / batchSize) + 1}: Falha ao enviar`);
+          console.error(`❌ Lote ${Math.floor(i / batchSize) + 1}: Falha ao enviar - ${result.error || 'Erro desconhecido'}`);
         }
       } catch (error) {
-        console.error(`❌ Erro ao enviar lote ${Math.floor(i / batchSize) + 1}:`, error);
+        console.error(`❌ Erro ao enviar lote ${Math.floor(i / batchSize) + 1}:`, {
+          message: error.message,
+          stack: error.stack,
+          code: error.code
+        });
         totalFailed += batch.length;
       }
     }

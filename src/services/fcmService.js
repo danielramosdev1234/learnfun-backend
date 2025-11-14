@@ -28,13 +28,23 @@ export const getFCMToken = async (userId) => {
 export const getFCMTokens = async (userIds) => {
   try {
     const tokens = [];
+    let foundCount = 0;
+    let notFoundCount = 0;
+    
+    console.log(`🔍 Buscando tokens FCM para ${userIds.length} usuários...`);
     
     for (const userId of userIds) {
       const token = await getFCMToken(userId);
       if (token) {
         tokens.push({ userId, token });
+        foundCount++;
+      } else {
+        notFoundCount++;
+        console.warn(`⚠️ Token não encontrado para usuário: ${userId}`);
       }
     }
+    
+    console.log(`✅ Tokens encontrados: ${foundCount}, não encontrados: ${notFoundCount} de ${userIds.length} total`);
     
     return tokens;
   } catch (error) {
@@ -125,11 +135,27 @@ export const sendNotification = async (userId, notification) => {
  */
 export const sendMulticastNotification = async (userIds, notification) => {
   try {
+    if (!userIds || userIds.length === 0) {
+      console.warn('⚠️ Nenhum userId fornecido para envio de notificação');
+      return { success: false, error: 'Nenhum userId fornecido', successCount: 0, failureCount: 0 };
+    }
+
     const tokens = await getFCMTokens(userIds);
     
     if (tokens.length === 0) {
       console.warn('⚠️ Nenhum token FCM encontrado para os usuários fornecidos');
-      return { success: false, error: 'Nenhum token encontrado' };
+      return { success: false, error: 'Nenhum token encontrado', successCount: 0, failureCount: userIds.length };
+    }
+
+    // Valida que todos os tokens são strings válidas
+    const validTokens = tokens.filter(t => t.token && typeof t.token === 'string' && t.token.trim().length > 0);
+    if (validTokens.length !== tokens.length) {
+      console.warn(`⚠️ Alguns tokens são inválidos: ${tokens.length - validTokens.length} de ${tokens.length}`);
+    }
+    
+    if (validTokens.length === 0) {
+      console.warn('⚠️ Nenhum token válido após validação');
+      return { success: false, error: 'Nenhum token válido', successCount: 0, failureCount: userIds.length };
     }
 
     // Converte caminho relativo do ícone para URL absoluta se necessário
@@ -157,7 +183,7 @@ export const sendMulticastNotification = async (userIds, notification) => {
         icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'), // Também envia nos dados para garantir
         badge: getAbsoluteIconUrl(notification.badge || '/pwa-192x192.png')
       },
-      tokens: tokens.map(t => t.token),
+      tokens: validTokens.map(t => t.token),
       webpush: {
         fcmOptions: {
           link: notification.url || '/'
@@ -172,6 +198,17 @@ export const sendMulticastNotification = async (userIds, notification) => {
       }
     };
 
+    // Log da estrutura da mensagem (sem tokens completos por segurança)
+    console.log('📤 Preparando envio multicast:', {
+      totalTokens: validTokens.length,
+      totalUserIds: userIds.length,
+      title: message.notification.title,
+      body: message.notification.body,
+      icon: message.notification.icon,
+      url: message.webpush.fcmOptions.link,
+      hasTokens: validTokens.length > 0
+    });
+
     const response = await admin.messaging().sendEachForMulticast(message);
     
     console.log(`✅ Notificações enviadas: ${response.successCount} sucesso, ${response.failureCount} falhas`);
@@ -182,9 +219,27 @@ export const sendMulticastNotification = async (userIds, notification) => {
       response.responses.forEach((resp, index) => {
         if (!resp.success) {
           const error = resp.error;
+          const userId = validTokens[index]?.userId || 'unknown';
+          const tokenPreview = validTokens[index]?.token?.substring(0, 20) || 'N/A';
+          
+          // Log detalhado do erro
+          console.error(`❌ Falha ao enviar notificação para usuário ${userId}:`, {
+            code: error.code,
+            message: error.message,
+            tokenPreview: `${tokenPreview}...`,
+            fullError: error
+          });
+          
           if (error.code === 'messaging/invalid-registration-token' || 
               error.code === 'messaging/registration-token-not-registered') {
-            invalidTokens.push(tokens[index].userId);
+            invalidTokens.push(userId);
+            console.log(`🗑️ Token inválido detectado para usuário ${userId}, será removido`);
+          } else {
+            // Outros tipos de erro (não relacionados a token inválido)
+            console.warn(`⚠️ Erro não relacionado a token inválido para usuário ${userId}:`, {
+              code: error.code,
+              message: error.message
+            });
           }
         }
       });
