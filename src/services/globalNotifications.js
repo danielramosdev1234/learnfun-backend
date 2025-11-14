@@ -176,7 +176,6 @@ export const runScheduledGlobalNotifications = async (hourParam, minuteParam) =>
     const timeString = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
     
     console.log(`⏰ Verificando notificações agendadas para ${timeString}...`);
-    console.log(`teste);
     console.log(hourParam);
     console.log(minuteParam);
 
