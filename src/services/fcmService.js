@@ -79,9 +79,9 @@ export const sendNotification = async (userId, notification) => {
     const message = {
       notification: {
         title: notification.title,
-        body: notification.body,
-        icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'),
-        ...(notification.image && { image: notification.image })
+        body: notification.body
+        // Nota: icon e image não são suportados em message.notification para web push
+        // Eles devem estar apenas em webpush.notification
       },
       data: {
         ...notification.data,
@@ -172,9 +172,9 @@ export const sendMulticastNotification = async (userIds, notification) => {
     const message = {
       notification: {
         title: notification.title,
-        body: notification.body,
-        icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'),
-        ...(notification.image && { image: notification.image })
+        body: notification.body
+        // Nota: icon e image não são suportados em message.notification para web push
+        // Eles devem estar apenas em webpush.notification
       },
       data: {
         ...notification.data,
