@@ -549,10 +549,18 @@ app.post('/api/notifications/schedule-global', async (req, res) => {
       });
     }
 
+    // Extrai currentHour e currentMinute do body (se fornecidos)
+    const { currentHour, currentMinute } = req.body;
+
     console.log('⏰ [SCHEDULE-GLOBAL] Executando notificações globais agendadas...');
     console.log('📅 [SCHEDULE-GLOBAL] Data/Hora:', new Date().toISOString());
-    
-    const results = await runScheduledGlobalNotifications();
+
+    if (currentHour !== undefined && currentMinute !== undefined) {
+      console.log(`🕒 [SCHEDULE-GLOBAL] Horário recebido: ${currentHour}:${currentMinute}`);
+    }
+
+    // Passa os parâmetros para a função
+    const results = await runScheduledGlobalNotifications(currentHour, currentMinute);
     
     if (results.executed) {
       console.log('✅ [SCHEDULE-GLOBAL] Execução concluída:', {
