@@ -54,12 +54,18 @@ export const sendGlobalNotification = async (title, body, options = {}) => {
 
     const userIds = tokens.map(t => t.userId);
     
+    // Para notificações globais, usa URL absoluta do frontend
+    // Isso garante que o ícone funcione mesmo quando o app está fechado
+    const frontendUrl = process.env.FRONTEND_URL || 'https://learnfun-sigma.vercel.app';
+    const defaultIcon = `${frontendUrl}/pwa-192x192.png`;
+    
     const notification = {
       title,
       body,
       type: options.type || 'global',
       url: options.url || '/',
-      icon: options.icon || '/pwa-192x192.png',
+      icon: options.icon || defaultIcon, // Usa URL absoluta por padrão
+      badge: options.badge || defaultIcon,
       tag: options.tag || 'global-notification',
       ...options
     };
@@ -110,10 +116,14 @@ export const sendTrainingReminder = async () => {
   const title = 'Hora de treinar! 🎯';
   const body = 'Que tal praticar um pouco de inglês agora? Cada minuto conta!';
   
+  const frontendUrl = process.env.FRONTEND_URL || 'https://learnfun-sigma.vercel.app';
+  
   return await sendGlobalNotification(title, body, {
     type: 'training_reminder',
     tag: 'training-reminder-0930',
-    url: '/'
+    url: '/',
+    icon: `${frontendUrl}/pwa-192x192.png`,
+    badge: `${frontendUrl}/pwa-192x192.png`
   });
 };
 
@@ -124,10 +134,14 @@ export const sendStreakReminder = async () => {
   const title = 'Não perca sua sequência! 🔥';
   const body = 'Continue sua sequência de treinos! Cada dia te aproxima mais da fluência!';
   
+  const frontendUrl = process.env.FRONTEND_URL || 'https://learnfun-sigma.vercel.app';
+  
   return await sendGlobalNotification(title, body, {
     type: 'streak_reminder',
     tag: 'streak-reminder-1200',
-    url: '/'
+    url: '/',
+    icon: `${frontendUrl}/pwa-192x192.png`,
+    badge: `${frontendUrl}/pwa-192x192.png`
   });
 };
 
@@ -157,10 +171,14 @@ export const sendMotivationalMessage = async () => {
   // Seleciona uma mensagem aleatória
   const randomMessage = messages[Math.floor(Math.random() * messages.length)];
   
+  const frontendUrl = process.env.FRONTEND_URL || 'https://learnfun-sigma.vercel.app';
+  
   return await sendGlobalNotification(randomMessage.title, randomMessage.body, {
     type: 'motivational',
     tag: 'motivational-2000',
-    url: '/'
+    url: '/',
+    icon: `${frontendUrl}/pwa-192x192.png`,
+    badge: `${frontendUrl}/pwa-192x192.png`
   });
 };
 

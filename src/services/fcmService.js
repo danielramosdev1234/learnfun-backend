@@ -55,16 +55,30 @@ export const sendNotification = async (userId, notification) => {
       return { success: false, error: 'Token não encontrado' };
     }
 
+    // Converte caminho relativo do ícone para URL absoluta se necessário
+    const getAbsoluteIconUrl = (iconPath) => {
+      if (!iconPath) return '/pwa-192x192.png';
+      // Se já é URL absoluta, retorna como está
+      if (iconPath.startsWith('http://') || iconPath.startsWith('https://')) {
+        return iconPath;
+      }
+      // Se é caminho relativo, retorna como está (o Service Worker vai converter)
+      return iconPath;
+    };
+
     const message = {
       notification: {
         title: notification.title,
         body: notification.body,
+        icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'),
         ...(notification.image && { image: notification.image })
       },
       data: {
         ...notification.data,
         type: notification.type || 'general',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'), // Também envia nos dados para garantir
+        badge: getAbsoluteIconUrl(notification.badge || '/pwa-192x192.png')
       },
       token,
       webpush: {
@@ -72,8 +86,8 @@ export const sendNotification = async (userId, notification) => {
           link: notification.url || '/'
         },
         notification: {
-          icon: notification.icon || '/pwa-192x192.png',
-          badge: notification.badge || '/pwa-192x192.png',
+          icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'),
+          badge: getAbsoluteIconUrl(notification.badge || '/pwa-192x192.png'),
           requireInteraction: notification.requireInteraction || false,
           vibrate: notification.vibrate || [200, 100, 200],
           tag: notification.tag || 'learnfun-notification'
@@ -118,16 +132,30 @@ export const sendMulticastNotification = async (userIds, notification) => {
       return { success: false, error: 'Nenhum token encontrado' };
     }
 
+    // Converte caminho relativo do ícone para URL absoluta se necessário
+    const getAbsoluteIconUrl = (iconPath) => {
+      if (!iconPath) return '/pwa-192x192.png';
+      // Se já é URL absoluta, retorna como está
+      if (iconPath.startsWith('http://') || iconPath.startsWith('https://')) {
+        return iconPath;
+      }
+      // Se é caminho relativo, retorna como está (o Service Worker vai converter)
+      return iconPath;
+    };
+
     const message = {
       notification: {
         title: notification.title,
         body: notification.body,
+        icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'),
         ...(notification.image && { image: notification.image })
       },
       data: {
         ...notification.data,
         type: notification.type || 'general',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'), // Também envia nos dados para garantir
+        badge: getAbsoluteIconUrl(notification.badge || '/pwa-192x192.png')
       },
       tokens: tokens.map(t => t.token),
       webpush: {
@@ -135,8 +163,8 @@ export const sendMulticastNotification = async (userIds, notification) => {
           link: notification.url || '/'
         },
         notification: {
-          icon: notification.icon || '/pwa-192x192.png',
-          badge: notification.badge || '/pwa-192x192.png',
+          icon: getAbsoluteIconUrl(notification.icon || '/pwa-192x192.png'),
+          badge: getAbsoluteIconUrl(notification.badge || '/pwa-192x192.png'),
           requireInteraction: notification.requireInteraction || false,
           vibrate: notification.vibrate || [200, 100, 200],
           tag: notification.tag || 'learnfun-notification'
