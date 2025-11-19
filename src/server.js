@@ -96,6 +96,10 @@ setupSocketHandlers(io);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+// ============================================
+// 🎤 ROTAS TTS (Text-to-Speech) - VERSÃO MELHORADA
+// Substitua as rotas TTS existentes no server.js por estas
+// ============================================
 
 /**
  * GET /api/tts/voices
@@ -162,6 +166,7 @@ app.post('/api/tts/synthesize', async (req, res) => {
     const cleanText = text
       .replace(/[#*_~`]/g, '')
       .replace(/\*\*/g, '')
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove caracteres de controle
       .replace(/[📝💡✅🎯📚👍❤️🤔🔥]/g, '')
       .split('---')[0] // Pegar apenas a parte principal
       .trim();
@@ -175,12 +180,12 @@ app.post('/api/tts/synthesize', async (req, res) => {
 
     console.log('🎤 [TTS API] Synthesizing speech...');
     console.log('📝 [TTS API] Text length:', cleanText.length);
-    console.log('🗣️ [TTS API] Voice:', voice);
+    console.log('🗣️ [TTS API] Voice requested:', voice);
 
-    // Sintetizar áudio
+    // Sintetizar áudio (com fallback automático)
     const audioBuffer = await synthesizeSpeech(cleanText, voice, rate, pitch);
 
-    // Retornar áudio como base64 (para facilitar no frontend)
+    // Retornar áudio como base64
     const audioBase64 = audioBuffer.toString('base64');
 
     res.json({
@@ -219,6 +224,7 @@ app.post('/api/tts/synthesize-stream', async (req, res) => {
     const cleanText = text
       .replace(/[#*_~`]/g, '')
       .replace(/\*\*/g, '')
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
       .replace(/[📝💡✅🎯📚👍❤️🤔🔥]/g, '')
       .split('---')[0]
       .trim();
@@ -238,31 +244,151 @@ app.post('/api/tts/synthesize-stream', async (req, res) => {
 
   } catch (error) {
     console.error('❌ [TTS STREAM] Error:', error);
-    res.status(500).json({ error: 'Failed to synthesize speech' });
+    res.status(500).json({ error: 'Failed to synthesize speech', details: error.message });
   }
 });
 
 /**
  * GET /api/tts/test
- * Endpoint de teste para verificar se o Edge TTS está funcionando
+ * Endpoint de teste MELHORADO
+ * Testa múltiplas vozes e retorna diagnóstico completo
  */
 app.get('/api/tts/test', async (req, res) => {
   try {
-    const testText = "Hello! This is a test of the Edge TTS system. It's working perfectly!";
-    const audioBuffer = await synthesizeSpeech(testText, 'en-US-JennyNeural', 0.9, 0);
+    console.log('🧪 [TTS TEST] Iniciando teste completo do sistema TTS...');
+
+    const results = {
+      systemStatus: 'unknown',
+      edgeTTSInstalled: false,
+      voicesAvailable: 0,
+      testResults: []
+    };
+
+    // 1. Verificar se edge-tts está instalado
+    try {
+      await execAsync('edge-tts --version', { timeout: 5000 });
+      results.edgeTTSInstalled = true;
+      console.log('✅ [TTS TEST] Edge TTS instalado');
+    } catch (error) {
+      results.systemStatus = 'edge-tts não instalado';
+      console.error('❌ [TTS TEST] Edge TTS não instalado');
+      return res.json(results);
+    }
+
+    // 2. Listar vozes disponíveis
+    try {
+      const voices = await listAvailableVoices();
+      results.voicesAvailable = voices.length;
+      console.log(`✅ [TTS TEST] ${voices.length} vozes disponíveis`);
+    } catch (error) {
+      console.error('❌ [TTS TEST] Erro ao listar vozes:', error);
+    }
+
+    // 3. Testar vozes de fallback
+    const testText = "Hello! This is a test.";
+    const testVoices = [
+      'en-US-JennyNeural',
+      'en-US-GuyNeural',
+      'en-GB-SoniaNeural',
+      'en-AU-NatashaNeural'
+    ];
+
+    for (const voiceName of testVoices) {
+      try {
+        console.log(`🧪 [TTS TEST] Testando voz: ${voiceName}...`);
+        const startTime = Date.now();
+
+        const audioBuffer = await synthesizeSpeech(testText, voiceName, 1.0, 0);
+        const duration = Date.now() - startTime;
+
+        results.testResults.push({
+          voice: voiceName,
+          status: 'success',
+          audioSize: audioBuffer.length,
+          audioSizeKB: (audioBuffer.length / 1024).toFixed(2),
+          duration: `${duration}ms`
+        });
+
+        console.log(`✅ [TTS TEST] ${voiceName}: ${(audioBuffer.length / 1024).toFixed(2)} KB em ${duration}ms`);
+      } catch (error) {
+        results.testResults.push({
+          voice: voiceName,
+          status: 'failed',
+          error: error.message
+        });
+        console.error(`❌ [TTS TEST] ${voiceName} falhou:`, error.message);
+      }
+    }
+
+    // Determinar status geral
+    const successCount = results.testResults.filter(r => r.status === 'success').length;
+    if (successCount === testVoices.length) {
+      results.systemStatus = 'excellent';
+    } else if (successCount > 0) {
+      results.systemStatus = 'partial';
+    } else {
+      results.systemStatus = 'failed';
+    }
+
+    console.log(`🏁 [TTS TEST] Teste concluído: ${successCount}/${testVoices.length} vozes funcionando`);
 
     res.json({
       success: true,
-      message: 'Edge TTS is working!',
-      audioSize: audioBuffer.length,
-      audioSizeKB: (audioBuffer.length / 1024).toFixed(2)
+      ...results,
+      timestamp: new Date().toISOString(),
+      message: `Sistema TTS ${results.systemStatus === 'excellent' ? 'funcionando perfeitamente' :
+                results.systemStatus === 'partial' ? 'funcionando parcialmente' : 'com problemas'}`
     });
 
   } catch (error) {
+    console.error('❌ [TTS TEST] Erro geral:', error);
     res.status(500).json({
       success: false,
       error: error.message,
       hint: 'Make sure edge-tts is installed: pip install edge-tts'
+    });
+  }
+});
+
+/**
+ * POST /api/tts/validate-voice
+ * Valida se uma voz específica está disponível
+ */
+app.post('/api/tts/validate-voice', async (req, res) => {
+  try {
+    const { voice } = req.body;
+
+    if (!voice) {
+      return res.status(400).json({ error: 'Voice name is required' });
+    }
+
+    console.log(`🔍 [TTS VALIDATE] Verificando voz: ${voice}...`);
+
+    // Tenta sintetizar um texto curto
+    try {
+      const testText = "Test";
+      await synthesizeSpeech(testText, voice, 1.0, 0);
+
+      res.json({
+        success: true,
+        voice,
+        available: true,
+        message: 'Voice is available and working'
+      });
+    } catch (error) {
+      res.json({
+        success: false,
+        voice,
+        available: false,
+        message: 'Voice not available or not working',
+        error: error.message
+      });
+    }
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
