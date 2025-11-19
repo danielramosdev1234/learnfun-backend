@@ -24,6 +24,7 @@ import { authenticate, authorizeUser, requireAdmin } from './middleware/auth.js'
 import { rateLimit, notificationRateLimit } from './middleware/rateLimit.js';
 import { auditLogger } from './middleware/logger.js';
 import { runScheduledGlobalNotifications } from './services/globalNotifications.js';
+import { synthesizeSpeech, RECOMMENDED_VOICES, listAvailableVoices } from './services/edgeTTSService.js';
 
 const app = express();
 const server = createServer(app);
@@ -94,6 +95,176 @@ setupSocketHandlers(io);
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+/**
+ * GET /api/tts/voices
+ * Lista vozes disponíveis do Edge TTS
+ */
+app.get('/api/tts/voices', async (req, res) => {
+  try {
+    const { language } = req.query;
+
+    let voices = RECOMMENDED_VOICES;
+
+    // Filtrar por idioma se especificado
+    if (language) {
+      voices = voices.filter(v => v.language === language);
+    }
+
+    res.json({
+      success: true,
+      voices,
+      total: voices.length
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao listar vozes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to list voices'
+    });
+  }
+});
+
+/**
+ * POST /api/tts/synthesize
+ * Sintetiza texto em áudio usando Edge TTS
+ *
+ * Body:
+ * {
+ *   "text": "Hello, how are you?",
+ *   "voice": "en-US-JennyNeural",
+ *   "rate": 0.9,
+ *   "pitch": 0
+ * }
+ */
+app.post('/api/tts/synthesize', async (req, res) => {
+  try {
+    const { text, voice = 'en-US-JennyNeural', rate = 0.9, pitch = 0 } = req.body;
+
+    // Validações
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Text is required'
+      });
+    }
+
+    if (text.length > 5000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Text too long (max 5000 characters)'
+      });
+    }
+
+    // Limpar texto (remover emojis e markdown)
+    const cleanText = text
+      .replace(/[#*_~`]/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/[📝💡✅🎯📚👍❤️🤔🔥]/g, '')
+      .split('---')[0] // Pegar apenas a parte principal
+      .trim();
+
+    if (cleanText.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Text is empty after cleaning'
+      });
+    }
+
+    console.log('🎤 [TTS API] Synthesizing speech...');
+    console.log('📝 [TTS API] Text length:', cleanText.length);
+    console.log('🗣️ [TTS API] Voice:', voice);
+
+    // Sintetizar áudio
+    const audioBuffer = await synthesizeSpeech(cleanText, voice, rate, pitch);
+
+    // Retornar áudio como base64 (para facilitar no frontend)
+    const audioBase64 = audioBuffer.toString('base64');
+
+    res.json({
+      success: true,
+      audio: audioBase64,
+      voice,
+      rate,
+      pitch,
+      textLength: cleanText.length,
+      audioSize: audioBuffer.length
+    });
+
+  } catch (error) {
+    console.error('❌ [TTS API] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to synthesize speech',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/tts/synthesize-stream
+ * Alternativa: retorna áudio diretamente como stream (mais eficiente)
+ */
+app.post('/api/tts/synthesize-stream', async (req, res) => {
+  try {
+    const { text, voice = 'en-US-JennyNeural', rate = 0.9, pitch = 0 } = req.body;
+
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ error: 'Text is required' });
+    }
+
+    // Limpar texto
+    const cleanText = text
+      .replace(/[#*_~`]/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/[📝💡✅🎯📚👍❤️🤔🔥]/g, '')
+      .split('---')[0]
+      .trim();
+
+    // Sintetizar áudio
+    const audioBuffer = await synthesizeSpeech(cleanText, voice, rate, pitch);
+
+    // Configurar headers para áudio
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': audioBuffer.length,
+      'Content-Disposition': 'inline; filename="speech.mp3"',
+      'Cache-Control': 'public, max-age=3600' // Cache por 1 hora
+    });
+
+    res.send(audioBuffer);
+
+  } catch (error) {
+    console.error('❌ [TTS STREAM] Error:', error);
+    res.status(500).json({ error: 'Failed to synthesize speech' });
+  }
+});
+
+/**
+ * GET /api/tts/test
+ * Endpoint de teste para verificar se o Edge TTS está funcionando
+ */
+app.get('/api/tts/test', async (req, res) => {
+  try {
+    const testText = "Hello! This is a test of the Edge TTS system. It's working perfectly!";
+    const audioBuffer = await synthesizeSpeech(testText, 'en-US-JennyNeural', 0.9, 0);
+
+    res.json({
+      success: true,
+      message: 'Edge TTS is working!',
+      audioSize: audioBuffer.length,
+      audioSizeKB: (audioBuffer.length / 1024).toFixed(2)
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      hint: 'Make sure edge-tts is installed: pip install edge-tts'
+    });
+  }
 });
 
 // ============================================
